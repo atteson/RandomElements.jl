@@ -18,3 +18,8 @@ X = IndependentRandomElement( Normal() )
 Y = IndependentRandomElement( Normal() )
 @assert( abs(-(rand( [X,Y] )...)) > 1e-6 )
 
+@assert( abs(-(rand( [X+1, X+1] )...)) < 1e-6 )
+@assert( abs(-(rand( [X+1, Y+1] )...)) > 1e-6 )
+
+Z = IndependentRandomElement( MvNormal( [0,0], I(2) ) )
+rand( [X, Z] )
