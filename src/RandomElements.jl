@@ -9,7 +9,7 @@ abstract type AbstractRandomElement{T}; end
 
 Base.eltype( ::Type{U} ) where {T, U <: AbstractRandomElement{T}} = T
 
-struct IndependentRandomElement{T} <: AbstractRandomElement{T}
+mutable struct IndependentRandomElement{T} <: AbstractRandomElement{T}
     dist::Distribution
 end
 

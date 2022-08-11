@@ -14,3 +14,7 @@ ys = rand( Y, N );
 
 rand( [X,Y], 10 )
 
+X = IndependentRandomElement( Normal() )
+Y = IndependentRandomElement( Normal() )
+@assert( abs(-(rand( [X,Y] )...)) > 1e-6 )
+
