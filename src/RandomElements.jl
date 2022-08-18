@@ -5,7 +5,7 @@ export IndependentRandomElement
 using Distributions
 using Random
 
-abstract type AbstractRandomElement{T}; end
+abstract type AbstractRandomElement{T} end
 
 Base.eltype( ::Type{U} ) where {T, U <: AbstractRandomElement{T}} = T
 

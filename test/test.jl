@@ -1,6 +1,7 @@
 using RandomElements
 using Random
 using Distributions
+using LinearAlgebra
 
 Random.seed!(1)
 X = IndependentRandomElement( Normal() )
