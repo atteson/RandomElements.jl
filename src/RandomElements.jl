@@ -9,11 +9,11 @@ abstract type AbstractRandomElement{T} end
 
 Base.eltype( ::Type{U} ) where {T, U <: AbstractRandomElement{T}} = T
 
-mutable struct IndependentRandomElement{T} <: AbstractRandomElement{T}
-    dist::Distribution
+mutable struct IndependentRandomElement{T,D <: Distribution} <: AbstractRandomElement{T}
+    dist::D
 end
 
-IndependentRandomElement( dist::Distribution ) = IndependentRandomElement{eltype(dist)}( dist )
+IndependentRandomElement( dist::D ) where {D <: Distribution} = IndependentRandomElement{eltype(dist),D}( dist )
 
 struct TransformedRandomElement{T,U <: AbstractRandomElement{T}} <: AbstractRandomElement{T}
     op::Function
