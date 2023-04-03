@@ -24,3 +24,9 @@ Y = IndependentRandomElement( Normal() )
 
 Z = IndependentRandomElement( MvNormal( [0,0], I(2) ) )
 rand( [X, Z] )
+
+W = X + 3 * Y + 1
+@time w = rand( W, 1_000_000 );
+@assert( abs(mean(w) - 1) < 0.01 )
+@assert( abs( std(w) - sqrt(10) ) < 0.01 )
+
