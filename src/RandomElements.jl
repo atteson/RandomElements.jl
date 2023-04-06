@@ -1,6 +1,6 @@
 module RandomElements
 
-export IndependentRandomElement
+export IndependentRandomElement, TimeSeries, IIDTimeSeries, lag
 
 using Distributions
 using Random
@@ -81,21 +81,31 @@ Base.rand( rng::AbstractRNG, sp::RandomElementSampler ) = rand.( rng, sp.re, ass
 abstract type AbstractSequence{T}
 end
 
-abstract type AbstractTimeSeries{T} <: AbstractRandomElement{AbstractSequence{T}}
+const AbstractTimeSeries{T} = AbstractRandomElement{AbstractSequence{T}}
+
+mutable struct TimeSeries{T, U <: AbstractTimeSeries{T}} <: AbstractRandomElement{AbstractSequence{T}}
+    base::AbstractRandomElement{T}
+    induction::Union{U, Nothing}
 end
 
-struct TimeSeries{T, U <: AbstractTimeSeries{T}} <: AbstractRandomElement{AbstractSequence{T}}
-    base::AbstractRandomElement{T}
-    induction::U
+TimeSeries( dist::Distribution = Dirac(0.0) ) =
+    TimeSeries{Float64,AbstractTimeSeries{Float64}}( IndependentRandomElement( dist ), nothing )
+
+function Base.setindex!( ts0::TimeSeries{T,U}, ts1::U ) where {T,U}
+    ts0.induction = ts1
 end
 
 struct LaggedTimeSeries{T} <: AbstractRandomElement{AbstractSequence{T}}
-    base::AbstractRandomElement{AbstractSequence{T}}
+    base::AbstractTimeSeries{T}
 end
 
-struct IIDTimeSeries{T} <: AbstractRandomElement{AbstractSequence{T}}
+lag( ts::AbstractTimeSeries{T} ) where T = LaggedTimeSeries( ts )
+
+struct IIDTimeSeries{T} <: AbstractTimeSeries{T}
     dist::Distribution
 end
+
+IIDTimeSeries( dist::Distribution{Univariate} ) = IIDTimeSeries{Float64}( dist )
 
 struct IndexedTimeSeries{T, U <: AbstractVector{Int}, V <: AbstractTimeSeries{T}} <: AbstractRandomElement{Vector{T}}
     indices::U
@@ -121,14 +131,11 @@ end
 
 rand_node( ts::IIDTimeSeries{T} ) where {T} = Node( () -> rand( ts.dist ), Node[], T[] )
 
-rand_node( ts::
-
 function Base.rand( rng::AbstractRNG, ts::IndexedTimeSeries{T,U,V} ) where {T,U,V}
     v = Vector{T}( undef, length(ts.indices) )
     for i = 0:maximum(ts.indices)
     end
     return v
 end
-    
-
+           
 end # module

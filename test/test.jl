@@ -30,3 +30,5 @@ W = X + 3 * Y + 1
 @assert( abs(mean(w) - 1) < 0.01 )
 @assert( abs( std(w) - sqrt(10) ) < 0.01 )
 
+X = TimeSeries()
+X = lag( X ) + IIDTimeSeries( Normal() )
