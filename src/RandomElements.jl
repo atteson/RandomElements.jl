@@ -1,6 +1,6 @@
 module RandomElements
 
-export IndependentRandomElement, TimeSeries, IIDTimeSeries, lag
+export IndependentRandomElement, TimeSeries, IID, lag
 
 using Distributions
 using Random
@@ -101,20 +101,15 @@ end
 
 lag( ts::AbstractTimeSeries{T} ) where T = LaggedTimeSeries( ts )
 
-struct IIDTimeSeries{T} <: AbstractTimeSeries{T}
+struct IID{T} <: AbstractTimeSeries{T}
     dist::Distribution
 end
 
-IIDTimeSeries( dist::Distribution{Univariate} ) = IIDTimeSeries{Float64}( dist )
-
-struct IndexedTimeSeries{T, U <: AbstractVector{Int}, V <: AbstractTimeSeries{T}} <: AbstractRandomElement{Vector{T}}
-    indices::U
-    ts::V
-end
+IID( dist::Distribution{Univariate} ) = IID{Float64}( dist )
 
 Base.getindex( ts::AbstractTimeSeries{T}, indices::AbstractVector{Int} ) where {T} = IndexedTimeSeries( indices, ts )
 
-struct Node{F,T}
+struct Node{F,T} <: AbstractSequence{T}
     calc::F
     dependencies::Vector{Node}
     cache::Vector{T}
@@ -124,18 +119,16 @@ function Base.getindex( node::Node{F,T}, i::Int ) where {T,F}
     j = length(node.cache)
     while i > j
         j += 1
-        node.cache.push!( node.calc( getindex.( node.dependencies, j )... ) )
+        push!( node.cache, node.calc( getindex.( node.dependencies, j )... ) )
     end
     return node.cache[i]
 end
 
-rand_node( ts::IIDTimeSeries{T} ) where {T} = Node( () -> rand( ts.dist ), Node[], T[] )
+Base.rand(
+    rng::AbstractRNG,
+    ts::IID{T};
+    assigned::Dict{AbstractRandomElement,Any} = Dict{AbstractRandomElement,Any}(),
+) where {T} =
+    memoize( assigned, ts, () -> Node( () -> rand( ts.dist ), Node[], T[] ) )
 
-function Base.rand( rng::AbstractRNG, ts::IndexedTimeSeries{T,U,V} ) where {T,U,V}
-    v = Vector{T}( undef, length(ts.indices) )
-    for i = 0:maximum(ts.indices)
-    end
-    return v
-end
-           
 end # module

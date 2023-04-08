@@ -32,3 +32,12 @@ W = X + 3 * Y + 1
 
 X = TimeSeries()
 X = lag( X ) + IIDTimeSeries( Normal() )
+
+X = IID( Normal() )
+s = rand( X )
+
+N = 1_000
+S = [s[i] for i in 1:N];
+@assert( abs(sum(S)/sqrt(N)) < 3 )
+
+
