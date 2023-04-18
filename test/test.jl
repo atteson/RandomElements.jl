@@ -31,7 +31,12 @@ W = X + 3 * Y + 1
 @assert( abs( std(w) - sqrt(10) ) < 0.01 )
 
 X = TimeSeries()
-X = lag( X ) + IIDTimeSeries( Normal() )
+X[] = lag( X ) + IID( Normal() )
+
+e = :( x -> x + 1 )
+e.head
+e.args
+e.args[2].args
 
 X = IID( Normal() )
 s = rand( X )
