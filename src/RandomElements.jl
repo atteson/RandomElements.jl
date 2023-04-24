@@ -17,16 +17,12 @@ end
 IndependentRandomElement( dist::D ) where {D <: Distribution} = IndependentRandomElement{eltype(dist),D}( dist )
 
 struct TransformedRandomElement{O,T,U <: AbstractRandomElement{T}} <: AbstractRandomElement{T}
->>>>>>> 100ec5ed39d4e0d9846d1f0e5b25ce8111ce6d8e
     # for now, all elements must be of the same type
     args::Vector{U}
 end
 
-
-const NRV = Union{AbstractRandomVariable,Number}
-
 for op in [:+,:*,:/,:-]
-    e1 = :( Base.$op( x::NRV, y::Number ) = $op( promote( x, y )... ) )
+    e1 = :( Base.$op( x::AbstractRandomElement{T}, y::Number ) where {T <: Number} = $op( promote( x, y )... ) )
     eval( e1 )
     
 
@@ -38,17 +34,17 @@ for op in [:+,:*,:/,:-]
     eval( e2 )
     
     e3 = quote
-        Base.$op( x::U, y::V ) where {T, U <: AbstractRandomVariable{T}, V <: AbstractRandomVariable{T}} =
-            TransformedRandomVariable( $op, AbstractRandomVariable{T}[x,y] )
+        Base.$op( x::AbstractRandomElement{T}, y::AbstractRandomElement{T} ) where {T <: Number} =
+            TransformedRandomElement{$op, T, AbstractRandomElement{T}}( AbstractRandomElement{T}[x,y] )
     end
     eval( e3 )
 end
 
-Base.promote_rule( ::Type{T}, ::Type{V} ) where {T <: Number, U, V <: AbstractRandomVariable{U}} =
-    AbstractRandomVariable{promote_type(T,U)}
+Base.promote_rule( ::Type{T}, ::Type{V} ) where {T <: Number, U <: Number, V <: AbstractRandomElement{U}} =
+    AbstractRandomElement{promote_type(T,U)}
 
-Base.convert( ::Type{AbstractRandomVariable{T}}, x::U ) where {T,U <: Number} =
-    IndependentRandomVariable(Dirac(convert(T, x)))
+Base.convert( ::Type{AbstractRandomElement{T}}, x::U ) where {T <: Number, U <: Number} =
+    IndependentRandomElement(Dirac(convert(T, x)))
 
 function memoize( d::Dict, k, f::Function )
     if !haskey( d, k )
@@ -59,9 +55,9 @@ end
 
 Base.rand(
     rng::AbstractRNG,
-    irv::IndependentRandomVariable{T};
-    assigned::Dict{AbstractRandomVariable,Any} = Dict{AbstractRandomVariable,Any}(),
-) where T = 
+    irv::IndependentRandomElement{T};
+    assigned::Dict{AbstractRandomElement,Any} = Dict{AbstractRandomElement,Any}(),
+) where {T <: Number} = 
     memoize( assigned, irv, () -> rand( rng, irv.dist ) )
 
 Base.rand(
@@ -74,18 +70,18 @@ Base.rand(
 
 Base.rand(
     rng::AbstractRNG,
-    sp::Random.SamplerTrivial{T},
-) where {T <: AbstractRandomVariable} =
-    rand( rng, sp[], assigned=Dict{AbstractRandomVariable,Any}() )
+    sp::Random.SamplerTrivial{U},
+) where {T <: Number, U <: AbstractRandomElement{T}} =
+    rand( rng, sp[], assigned=Dict{AbstractRandomElement,Any}() )
 
-struct RandomVariableSampler{T} <: Random.Sampler{T}
-    rv::T
+struct RandomElementSampler{T} <: Random.Sampler{T}
+    re::T
 end
 
-Random.gentype( ::Type{Vector{U}} ) where {T, U <: AbstractRandomVariable{T}} = Vector{T}
+Random.gentype( ::Type{Vector{U}} ) where {T <: Number, U <: AbstractRandomElement{T}} = Vector{T}
 
-Random.Sampler( ::Type{<:AbstractRNG}, vre::Vector{<:AbstractRandomVariable}, repetition::Random.Repetition ) =
-    RandomVariableSampler( vre )
+Random.Sampler( ::Type{<:AbstractRNG}, vre::Vector{<:AbstractRandomElement}, repetition::Random.Repetition ) =
+    RandomElementSampler( vre )
 
 Base.rand( rng::AbstractRNG, sp::RandomElementSampler ) = rand.( rng, sp.re, assigned=Dict{AbstractRandomElement,Any}() )
 
@@ -137,7 +133,7 @@ end
 
 Base.rand(
     rng::AbstractRNG,
-    sp::RandomVariableSampler,
+    sp::RandomElementSampler,
     ts::IID{T};
     assigned::Dict{AbstractRandomElement,Any} = Dict{AbstractRandomElement,Any}(),
 ) where {T} =
