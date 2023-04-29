@@ -5,6 +5,8 @@ export IndependentRandomElement, TimeSeries, IID, lag
 using Distributions
 using Random
 
+Base.eltype(::Type{<:MvNormal{T}}) where {T <: Integer} = Float64
+
 abstract type AbstractRandomElement{T}
 end
 
@@ -14,7 +16,12 @@ mutable struct IndependentRandomElement{T,D <: Distribution} <: AbstractRandomEl
     dist::D
 end
 
-IndependentRandomElement( dist::D ) where {D <: Distribution} = IndependentRandomElement{eltype(dist),D}( dist )
+# make these Float64 whether they are continuous or not because 
+IndependentRandomElement( dist::D ) where {D <: Distribution{Univariate}} =
+    IndependentRandomElement{Float64,D}( dist )
+
+IndependentRandomElement( dist::D ) where {D <: Distribution{Multivariate}} =
+    IndependentRandomElement{Vector{Float64},D}( dist )
 
 struct TransformedRandomElement{O,T,U <: AbstractRandomElement{T}} <: AbstractRandomElement{T}
     # for now, all elements must be of the same type
@@ -22,19 +29,14 @@ struct TransformedRandomElement{O,T,U <: AbstractRandomElement{T}} <: AbstractRa
 end
 
 for op in [:+,:*,:/,:-]
-    e1 = :( Base.$op( x::AbstractRandomElement{T}, y::Number ) where {T <: Number} = $op( promote( x, y )... ) )
+    e1 = :( Base.$op( x::Number, y::AbstractRandomElement ) = $op( promote( x, y )... ) )
     eval( e1 )
-    
 
-    e2 = quote
-        Base.$op( x::AbstractRandomElement{T}, y::AbstractRandomElement{T} ) where T =
-            TransformedRandomElement{$op, T, AbstractRandomElement{T}}( AbstractRandomElement{T}[x,y] )
-    end
-    
+    e2 = :( Base.$op( x::AbstractRandomElement, y::Number ) = $op( promote( x, y )... ) )
     eval( e2 )
     
     e3 = quote
-        Base.$op( x::AbstractRandomElement{T}, y::AbstractRandomElement{T} ) where {T <: Number} =
+        Base.$op( x::AbstractRandomElement{T}, y::AbstractRandomElement{T} ) where T =
             TransformedRandomElement{$op, T, AbstractRandomElement{T}}( AbstractRandomElement{T}[x,y] )
     end
     eval( e3 )
@@ -42,6 +44,9 @@ end
 
 Base.promote_rule( ::Type{T}, ::Type{V} ) where {T <: Number, U <: Number, V <: AbstractRandomElement{U}} =
     AbstractRandomElement{promote_type(T,U)}
+
+Base.promote_rule( ::Type{U}, ::Type{W} ) where {T <: Number, U <: AbstractRandomElement{T}, V <: Number, W <: AbstractRandomElement{V}} =
+    AbstractRandomElement{promote_type(T,V)}
 
 Base.convert( ::Type{AbstractRandomElement{T}}, x::U ) where {T <: Number, U <: Number} =
     IndependentRandomElement(Dirac(convert(T, x)))
@@ -57,7 +62,7 @@ Base.rand(
     rng::AbstractRNG,
     irv::IndependentRandomElement{T};
     assigned::Dict{AbstractRandomElement,Any} = Dict{AbstractRandomElement,Any}(),
-) where {T <: Number} = 
+) where T = 
     memoize( assigned, irv, () -> rand( rng, irv.dist ) )
 
 Base.rand(
@@ -133,7 +138,6 @@ end
 
 Base.rand(
     rng::AbstractRNG,
-    sp::RandomElementSampler,
     ts::IID{T};
     assigned::Dict{AbstractRandomElement,Any} = Dict{AbstractRandomElement,Any}(),
 ) where {T} =
