@@ -67,7 +67,6 @@ Base.rand(
 
 Base.rand(
     rng::AbstractRNG,
-
     tre::TransformedRandomElement{O,T,U};
     assigned::Dict{AbstractRandomElement,Any} = Dict{AbstractRandomElement,Any}(),
 ) where {O,T,U} =
