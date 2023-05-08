@@ -1,6 +1,6 @@
 module RandomElements
 
-export IndependentRandomElement, TimeSeries, IID, lag
+export IndependentRandomElement, TimeSeries, IID, Time
 
 using Distributions
 using Random
@@ -94,23 +94,40 @@ end
 
 const AbstractTimeSeries{T} = AbstractRandomElement{AbstractSequence{T}}
 
-mutable struct TimeSeries{T, U <: AbstractTimeSeries{T}} <: AbstractRandomElement{AbstractSequence{T}}
-    base::AbstractRandomElement{T}
-    induction::Union{U, Nothing}
+struct Time
+    lag::Int
 end
 
-TimeSeries( dist::Distribution = Dirac(0.0) ) =
-    TimeSeries{Float64,AbstractTimeSeries{Float64}}( IndependentRandomElement( dist ), nothing )
+Time() = Time(0)
 
-function Base.setindex!( ts0::TimeSeries{T,U}, ts1::U ) where {T,U}
+Base.:+( i::Integer, t::Time ) = Time( t.lag + i )
+
+Base.:+( t::Time, i::Integer ) = Time( t.lag + i )
+
+Base.:-( t::Time, i::Integer ) = Time( t.lag - i )
+
+mutable struct TimeSeries{T, U <: AbstractTimeSeries{T}} <: AbstractRandomElement{AbstractSequence{T}}
+    base::AbstractRandomElement{T}
+    induction::Union{U,Nothing}
+    t::Union{Time,Nothing}
+end
+
+TimeSeries{T,U}( base::AbstractRandomElement{T} ) where {T,U} = TimeSeries{T,U}( base, nothing, nothing )
+
+TimeSeries( dist::Distribution = Dirac(0.0) ) =
+    TimeSeries{Float64,AbstractTimeSeries{Float64}}( IndependentRandomElement( dist ) )
+
+function Base.setindex!( ts0::TimeSeries{T,U}, ts1::U, t::Time ) where {T,U}
     ts0.induction = ts1
+    ts0.t = t
 end
 
 struct LaggedTimeSeries{T} <: AbstractRandomElement{AbstractSequence{T}}
     base::AbstractTimeSeries{T}
+    t::Time
 end
 
-lag( ts::AbstractTimeSeries{T} ) where T = LaggedTimeSeries( ts )
+Base.getindex( ts::AbstractTimeSeries{T}, t::Time ) where {T} = LaggedTimeSeries( ts, t )
 
 struct IID{T} <: AbstractTimeSeries{T}
     dist::Distribution
@@ -122,7 +139,7 @@ Base.getindex( ts::AbstractTimeSeries{T}, indices::AbstractVector{Int} ) where {
 
 struct Node{F,T} <: AbstractSequence{T}
     calc::F
-    dependencies::Vector{Node}
+    lagged_vars::Vector{Node}
     cache::Vector{T}
 end
 
@@ -130,9 +147,21 @@ function Base.getindex( node::Node{F,T}, i::Int ) where {T,F}
     j = length(node.cache)
     while i > j
         j += 1
-        push!( node.cache, node.calc( getindex.( node.dependencies, j )... ) )
+        push!( node.cache, node.calc( getindex.( node.lagged_vars, j-1 )... ) )
     end
     return node.cache[i]
+end
+
+Expr( ts::IID{T}, lagged_vars::Dict{AbstractTimeSeries,Symbol} ) where {T} = Expr( :call, [:rand, ts.dist] )
+
+function Expr( ts::LaggedTimeSeries{T}, lagged_vars::Dict{AbstractTimeSeries,Symbol} ) where {T}
+    if !haskey( lagged_vars, ts )
+        lagged_vars[ts] = Symbol("x" + string(length(lagged_vars)))
+    end
+    return lagged_vars[ts]
+end
+
+function Expr( ts::TimeSeries{T}, lagged_vars::Dict{AbstractTimeSeries,Symbol} ) where {T}
 end
 
 Base.rand(

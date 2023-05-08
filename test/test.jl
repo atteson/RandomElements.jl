@@ -31,8 +31,12 @@ W = X + 3 * Y + 1
 @assert( abs(mean(w) - 1) < 0.01 )
 @assert( abs( std(w) - sqrt(10) ) < 0.01 )
 
+
+t = Time()
 X = TimeSeries()
-X[] = lag( X ) + IID( Normal() )
+X[t] = X[t-1] + IID( Normal() )
+
+
 
 X = IID( Normal() )
 s = rand( X )
