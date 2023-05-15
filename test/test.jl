@@ -42,5 +42,7 @@ N = 1_000
 S = [s[i] for i in 1:N];
 @assert( abs(sum(S)/sqrt(N)) < 3 )
 
-dependencies = Dict{RandomElements.AbstractTimeSeries,Symbol}()
-RandomElements.rand_expr( Z, t, dependencies )
+node = RandomElements.Node( Z )
+n1 = node[1]
+n2 = node[2]
+@assert( n1 == node[1] )

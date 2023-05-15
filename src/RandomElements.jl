@@ -134,33 +134,38 @@ end
 
 IID( dist::Distribution{Univariate} ) = IID{Float64}( dist )
 
-Base.getindex( ts::AbstractTimeSeries{T}, indices::AbstractVector{Int} ) where {T} = IndexedTimeSeries( indices, ts )
+const Dependencies = Dict{Pair{AbstractTimeSeries,UInt}, Symbol}
 
-struct Node{F,T} <: AbstractSequence{T}
-    calc::F
-    lagged_vars::Vector{Node}
+# can ignore lag here
+rand_expr( ts::IID{T}, base_lag::Time, ::Dependencies ) where {T} = Expr( :call, [:rand, ts.dist] )
+
+function rand_expr( ts::LaggedTimeSeries{T,Union{IID{T},TimeSeries{T,U}}}, base_lag::Time, dependencies::Dependencies ) where {T,U}
+    key = (ts.base, ts.t.lag - base_lag.lag)
+    if !haskey( dependencies, key )
+        dependencies[key] = Symbol( "x" * string(length(dependencies)) )
+    end
+    return Expr( :ref, [dependencies[ts.base], Expr( :call, [:+, :t, key[2]] )] )
+end
+
+
+struct Node{T} <: AbstractSequence{T}
+    calc::Union{Nothing,Function}
+    dependencies::Vector{Node}
+    lags::Vector{UInt}
     cache::Vector{T}
 end
 
-function Base.getindex( node::Node{F,T}, i::Int ) where {T,F}
+Node( T ) = Node( nothing, Node[], UInt[], T[] )
+
+Node( ts::IID{T} ) where {T} = Node( () -> rand(ts.dist), Node[], UInt[], T[] )
+
+function Base.getindex( node::Node{T}, i::Int ) where {T}
     j = length(node.cache)
     while i > j
         j += 1
-        push!( node.cache, node.calc( getindex.( node.lagged_vars, j-1 )... ) )
+        push!( node.cache, node.calc( getindex.( node.dependencies, j .- node.lags )... ) )
     end
     return node.cache[i]
-end
-
-# can ignore lag here
-rand_expr( ts::IID{T}, base_lag::Time, dependencies::Dict{AbstractTimeSeries,Symbol} ) where {T} = Expr( :call, [:rand, ts.dist] )
-
-time_expr( base_lag::Time, t::Time ) = t.lag - base_lag.lag <= 0 ? Expr( :call, [:+, :t, t.lag - base_lag.lag ] ) : error( "Can't reference future" )
-
-function rand_expr( ts::LaggedTimeSeries{T,Union{IID{T},TimeSeries{T,U}}}, base_lag::Time, dependencies::Dict{AbstractTimeSeries,Symbol} ) where {T,U}
-    if !haskey( dependencies, ts.base )
-        dependencies[ts.base] = Symbol("x" + string(length(dependencies)))
-    end
-    return Expr( :ref, [dependencies[ts.base], time_expr( base_lag, ts.t ) ] )
 end
 
 Base.rand(
@@ -168,6 +173,6 @@ Base.rand(
     ts::IID{T};
     assigned::Dict{AbstractRandomElement,Any} = Dict{AbstractRandomElement,Any}(),
 ) where {T} =
-    memoize( assigned, ts, () -> Node( () -> rand( ts.dist ), Node[], T[] ) )
+    memoize( assigned, ts, () -> Node( () -> rand( ts.dist ), Node[], UInt[], T[] ) )
 
 end # module
