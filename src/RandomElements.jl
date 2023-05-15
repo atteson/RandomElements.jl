@@ -98,10 +98,9 @@ struct Time
     lag::Int
 end
 
-Time() = Time(0)
+Time() = Time( 0 )
 
 Base.:+( i::Integer, t::Time ) = Time( t.lag + i )
-
 Base.:+( t::Time, i::Integer ) = Time( t.lag + i )
 
 Base.:-( t::Time, i::Integer ) = Time( t.lag - i )
@@ -122,8 +121,8 @@ function Base.setindex!( ts0::TimeSeries{T,U}, ts1::U, t::Time ) where {T,U}
     ts0.t = t
 end
 
-struct LaggedTimeSeries{T} <: AbstractRandomElement{AbstractSequence{T}}
-    base::AbstractTimeSeries{T}
+struct LaggedTimeSeries{T,U <: AbstractTimeSeries{T}} <: AbstractRandomElement{AbstractSequence{T}}
+    base::U
     t::Time
 end
 
@@ -152,16 +151,16 @@ function Base.getindex( node::Node{F,T}, i::Int ) where {T,F}
     return node.cache[i]
 end
 
-Expr( ts::IID{T}, lagged_vars::Dict{AbstractTimeSeries,Symbol} ) where {T} = Expr( :call, [:rand, ts.dist] )
+# can ignore lag here
+rand_expr( ts::IID{T}, base_lag::Time, dependencies::Dict{AbstractTimeSeries,Symbol} ) where {T} = Expr( :call, [:rand, ts.dist] )
 
-function Expr( ts::LaggedTimeSeries{T}, lagged_vars::Dict{AbstractTimeSeries,Symbol} ) where {T}
-    if !haskey( lagged_vars, ts )
-        lagged_vars[ts] = Symbol("x" + string(length(lagged_vars)))
+time_expr( base_lag::Time, t::Time ) = t.lag - base_lag.lag <= 0 ? Expr( :call, [:+, :t, t.lag - base_lag.lag ] ) : error( "Can't reference future" )
+
+function rand_expr( ts::LaggedTimeSeries{T,Union{IID{T},TimeSeries{T,U}}}, base_lag::Time, dependencies::Dict{AbstractTimeSeries,Symbol} ) where {T,U}
+    if !haskey( dependencies, ts.base )
+        dependencies[ts.base] = Symbol("x" + string(length(dependencies)))
     end
-    return lagged_vars[ts]
-end
-
-function Expr( ts::TimeSeries{T}, lagged_vars::Dict{AbstractTimeSeries,Symbol} ) where {T}
+    return Expr( :ref, [dependencies[ts.base], time_expr( base_lag, ts.t ) ] )
 end
 
 Base.rand(

@@ -31,17 +31,16 @@ W = X + 3 * Y + 1
 @assert( abs(mean(w) - 1) < 0.01 )
 @assert( abs( std(w) - sqrt(10) ) < 0.01 )
 
-
 t = Time()
 X = TimeSeries()
-X[t] = X[t-1] + IID( Normal() )
+Z = IID( Normal() )
+X[t] = X[t-1] + Z
 
-
-
-X = IID( Normal() )
-s = rand( X )
+s = rand( Z )
 
 N = 1_000
 S = [s[i] for i in 1:N];
 @assert( abs(sum(S)/sqrt(N)) < 3 )
 
+dependencies = Dict{RandomElements.AbstractTimeSeries,Symbol}()
+RandomElements.rand_expr( Z, t, dependencies )
