@@ -134,20 +134,6 @@ end
 
 IID( dist::Distribution{Univariate} ) = IID{Float64}( dist )
 
-const Dependencies = Dict{Pair{AbstractTimeSeries,UInt}, Symbol}
-
-# can ignore lag here
-rand_expr( ts::IID{T}, base_lag::Time, ::Dependencies ) where {T} = Expr( :call, [:rand, ts.dist] )
-
-function rand_expr( ts::LaggedTimeSeries{T,Union{IID{T},TimeSeries{T,U}}}, base_lag::Time, dependencies::Dependencies ) where {T,U}
-    key = (ts.base, ts.t.lag - base_lag.lag)
-    if !haskey( dependencies, key )
-        dependencies[key] = Symbol( "x" * string(length(dependencies)) )
-    end
-    return Expr( :ref, [dependencies[ts.base], Expr( :call, [:+, :t, key[2]] )] )
-end
-
-
 struct Node{T} <: AbstractSequence{T}
     calc::Union{Nothing,Function}
     dependencies::Vector{Node}
@@ -157,7 +143,23 @@ end
 
 Node( T ) = Node( nothing, Node[], UInt[], T[] )
 
-Node( ts::IID{T} ) where {T} = Node( () -> rand(ts.dist), Node[], UInt[], T[] )
+const Dependencies = Dict{Pair{AbstractTimeSeries,UInt}, Symbol}
+
+# can ignore lag here
+rand_expr( ts::IID{T}, base_lag::Time, ::Dependencies ) where {T} = Node( () -> rand(ts.dist), Node[], UInt[], T[] )
+
+function rand_expr( ts::LaggedTimeSeries{T,Union{IID{T},TimeSeries{T,U}}}, base_lag::Time, dependencies::Dependencies ) where {T,U}
+    key = (ts.base, ts.t.lag - base_lag.lag)
+    if !haskey( dependencies, key )
+        dependencies[key] = Symbol( "x" * string(length(dependencies)) )
+    end
+    return Expr( :ref, [dependencies[ts.base], Expr( :call, [:+, :t, key[2]] )] )
+end
+
+function rand_expr( ts::TimeSeries{T,TransformedRandomElement{O, T, U}}, base_lag::Time, dependencies::Dependencies ) where {O,T,U}
+    @assert( ts.
+    return Expr( :call, [O, ts.induction.args...] )
+end
 
 function Base.getindex( node::Node{T}, i::Int ) where {T}
     j = length(node.cache)
