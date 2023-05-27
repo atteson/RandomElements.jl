@@ -51,6 +51,25 @@ Base.promote_rule( ::Type{U}, ::Type{W} ) where {T <: Number, U <: AbstractRando
 Base.convert( ::Type{AbstractRandomElement{T}}, x::U ) where {T <: Number, U <: Number} =
     IndependentRandomElement(Dirac(convert(T, x)))
 
+struct Node{T}
+    calc::Union{Nothing,Function}
+    dependences::Vector{Node}
+    cache::Vector{T}
+end
+
+function rand_expr( re::IndependentRandomElement{T}, dependencies::Dict{AbstractRandomElement,Tuple{Node,Symbol}}, n::Int ) where {T}
+    if !haskey( dependencies, re )
+        node = Node( () -> rand( re.dist, n ), Node[], T[] )
+        dependencies{re} = (node, Symbol("x" * string(length(dependencies))))
+    end
+    return dependencies[re][1]
+end
+
+function rand_expr( re::TransformedRandomElement{O,T}, dependencies::Dict{AbstractRandomElement,Tuple{Node,Symbol}}, n::Int ) where {O,T}
+    exprs = rand_expr.( re.args, [dependencies], n )
+    return Expr( call, O, exprs... )
+end
+
 function memoize( d::Dict, k, f::Function )
     if !haskey( d, k )
         d[k] = f()
@@ -134,19 +153,16 @@ end
 
 IID( dist::Distribution{Univariate} ) = IID{Float64}( dist )
 
-struct Node{T} <: AbstractSequence{T}
+struct SequenceNode{T}
     calc::Union{Nothing,Function}
-    dependencies::Vector{Node}
+    dependencies::Vector{SequenceNode}
     lags::Vector{UInt}
     cache::Vector{T}
 end
 
-Node( T ) = Node( nothing, Node[], UInt[], T[] )
-
 const Dependencies = Dict{Pair{AbstractTimeSeries,UInt}, Symbol}
 
-# can ignore lag here
-rand_expr( ts::IID{T}, base_lag::Time, ::Dependencies ) where {T} = Node( () -> rand(ts.dist), Node[], UInt[], T[] )
+rand_expr( ts::IID{T}, base_lag::Time, ::Dependencies ) where {T} = SequenceNode( () -> rand(ts.dist), SequenceNode[], UInt[], T[] )
 
 function rand_expr( ts::LaggedTimeSeries{T,Union{IID{T},TimeSeries{T,U}}}, base_lag::Time, dependencies::Dependencies ) where {T,U}
     key = (ts.base, ts.t.lag - base_lag.lag)
@@ -175,6 +191,6 @@ Base.rand(
     ts::IID{T};
     assigned::Dict{AbstractRandomElement,Any} = Dict{AbstractRandomElement,Any}(),
 ) where {T} =
-    memoize( assigned, ts, () -> Node( () -> rand( ts.dist ), Node[], UInt[], T[] ) )
+    memoize( assigned, ts, () -> SequenceNode( () -> rand( ts.dist ), SequenceNode[], UInt[], T[] ) )
 
 end # module

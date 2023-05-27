@@ -46,3 +46,4 @@ node = RandomElements.Node( Z )
 n1 = node[1]
 n2 = node[2]
 @assert( n1 == node[1] )
+
