@@ -23,7 +23,7 @@ IndependentRandomElement( dist::D ) where {D <: Distribution{Univariate}} =
 IndependentRandomElement( dist::D ) where {D <: Distribution{Multivariate}} =
     IndependentRandomElement{Vector{Float64},D}( dist )
 
-struct TransformedRandomElement{O,T,U <: AbstractRandomElement{T}} <: AbstractRandomElement{T}
+struct TransformedRandomElement{Op,T,U <: AbstractRandomElement{T}} <: AbstractRandomElement{T}
     # for now, all elements must be of the same type
     args::Vector{U}
 end
@@ -53,21 +53,21 @@ Base.convert( ::Type{AbstractRandomElement{T}}, x::U ) where {T <: Number, U <: 
 
 struct Node{T}
     calc::Union{Nothing,Function}
-    dependences::Vector{Node}
+    dependencies::Vector{Node}
     cache::Vector{T}
 end
 
 function rand_expr( re::IndependentRandomElement{T}, dependencies::Dict{AbstractRandomElement,Tuple{Node,Symbol}}, n::Int ) where {T}
     if !haskey( dependencies, re )
         node = Node( () -> rand( re.dist, n ), Node[], T[] )
-        dependencies{re} = (node, Symbol("x" * string(length(dependencies))))
+        dependencies[re] = (node, Symbol("x" * string(length(dependencies))))
     end
     return dependencies[re][1]
 end
 
-function rand_expr( re::TransformedRandomElement{O,T}, dependencies::Dict{AbstractRandomElement,Tuple{Node,Symbol}}, n::Int ) where {O,T}
+function rand_expr( re::TransformedRandomElement{Op,T}, dependencies::Dict{AbstractRandomElement,Tuple{Node,Symbol}}, n::Int ) where {Op,T}
     exprs = rand_expr.( re.args, [dependencies], n )
-    return Expr( call, O, exprs... )
+    return Expr( call, Op, exprs... )
 end
 
 function memoize( d::Dict, k, f::Function )
@@ -86,10 +86,10 @@ Base.rand(
 
 Base.rand(
     rng::AbstractRNG,
-    tre::TransformedRandomElement{O,T,U};
+    tre::TransformedRandomElement{Op,T,U};
     assigned::Dict{AbstractRandomElement,Any} = Dict{AbstractRandomElement,Any}(),
-) where {O,T,U} =
-    memoize( assigned, tre, () -> O( rand.( rng, tre.args, assigned=assigned )... ) )
+) where {Op,T,U} =
+    memoize( assigned, tre, () -> Op( rand.( rng, tre.args, assigned=assigned )... ) )
 
 Base.rand(
     rng::AbstractRNG,
@@ -172,9 +172,8 @@ function rand_expr( ts::LaggedTimeSeries{T,Union{IID{T},TimeSeries{T,U}}}, base_
     return Expr( :ref, [dependencies[ts.base], Expr( :call, [:+, :t, key[2]] )] )
 end
 
-function rand_expr( ts::TimeSeries{T,TransformedRandomElement{O, T, U}}, base_lag::Time, dependencies::Dependencies ) where {O,T,U}
-    @assert( ts.
-    return Expr( :call, [O, ts.induction.args...] )
+function rand_expr( ts::TimeSeries{T,TransformedRandomElement{Op, T, U}}, base_lag::Time, dependencies::Dependencies ) where {Op,T,U}
+    return Expr( :call, [Op, ts.induction.args...] )
 end
 
 function Base.getindex( node::Node{T}, i::Int ) where {T}
