@@ -57,56 +57,51 @@ struct Node{T}
     cache::Vector{T}
 end
 
-function rand_expr( re::IndependentRandomElement{T}, dependencies::Dict{AbstractRandomElement,Tuple{Node,Symbol}}, n::Int ) where {T}
+struct Dependencies
+    re2sym::Dict{AbstractRandomElement, Symbol}
+    sym2node::Dict{Symbol, Node}
+end
+
+Dependencies() = Dependencies( Dict{AbstractRandomElement, Symbol}(), Dict{Symbol, Node}() )
+
+Base.length( dependencies::Dependencies ) = length(dependencies.re2sym )
+Base.haskey( dependencies::Dependencies, re::AbstractRandomElement ) = haskey( dependencies.re2sym, re )
+Base.getindex( dependencies::Dependencies, re::AbstractRandomElement ) = dependencies.re2sym[re]
+Base.getindex( dependencies::Dependencies, sym::Symbol ) = dependencies.sym2node[sym]
+symbols( dependencies::Dependencies ) = collect(keys(dependencies.sym2node))
+nodes( dependencies::Dependencies ) = collect(values(dependencies.sym2node))
+
+function Base.setindex!( dependencies::Dependencies, sym::Symbol, re::AbstractRandomElement{T}, node::Node{T} ) where T
+    dependencies.re2sym[re] = sym
+    dependencies.sym2node[sym] = node
+end
+    
+
+function rand_expr( re::IndependentRandomElement{T}, dependencies::Dependencies ) where {T}
     if !haskey( dependencies, re )
-        node = Node( () -> rand( re.dist, n ), Node[], T[] )
-        dependencies[re] = (node, Symbol("x" * string(length(dependencies))))
+        node = Node( (n) -> rand( re.dist, n ), Node[], T[] )
+        dependencies[re, node] = Symbol("x" * string(length(dependencies)))
     end
-    return dependencies[re][1]
+    return dependencies[re]
 end
 
-function rand_expr( re::TransformedRandomElement{Op,T}, dependencies::Dict{AbstractRandomElement,Tuple{Node,Symbol}}, n::Int ) where {Op,T}
-    exprs = rand_expr.( re.args, [dependencies], n )
-    return Expr( call, Op, exprs... )
+function rand_expr( re::TransformedRandomElement{Op,T}, dependencies::Dependencies ) where {Op,T}
+    exprs = rand_expr.( re.args, [dependencies] )
+    return Expr( :call, Op, exprs... )
 end
 
-function memoize( d::Dict, k, f::Function )
-    if !haskey( d, k )
-        d[k] = f()
-    end
-    return d[k]
+Node( s::Symbol, dependencies::Dependencies, T ) = dependencies[s]
+
+function Node( expr::Expr, dependencies::Dependencies, T )
+    f = eval( Expr( :->, Expr( :tuple, :n, symbols(dependencies)... ), expr ) )
+    return Node( f, values(dependencies), T[] )
 end
 
-Base.rand(
-    rng::AbstractRNG,
-    irv::IndependentRandomElement{T};
-    assigned::Dict{AbstractRandomElement,Any} = Dict{AbstractRandomElement,Any}(),
-) where T = 
-    memoize( assigned, irv, () -> rand( rng, irv.dist ) )
-
-Base.rand(
-    rng::AbstractRNG,
-    tre::TransformedRandomElement{Op,T,U};
-    assigned::Dict{AbstractRandomElement,Any} = Dict{AbstractRandomElement,Any}(),
-) where {Op,T,U} =
-    memoize( assigned, tre, () -> Op( rand.( rng, tre.args, assigned=assigned )... ) )
-
-Base.rand(
-    rng::AbstractRNG,
-    sp::Random.SamplerTrivial{U},
-) where {T <: Number, U <: AbstractRandomElement{T}} =
-    rand( rng, sp[], assigned=Dict{AbstractRandomElement,Any}() )
-
-struct RandomElementSampler{T} <: Random.Sampler{T}
-    re::T
+function Random.Sampler( rng::AbstractRNG, re::AbstractRandomElement{T}, ::Random.Repetition ) where {T}
+    dependencies = Dependencies()
+    expr = rand_expr( re, dependencies )
+    return Node( expr, dependencies, T )
 end
-
-Random.gentype( ::Type{Vector{U}} ) where {T <: Number, U <: AbstractRandomElement{T}} = Vector{T}
-
-Random.Sampler( ::Type{<:AbstractRNG}, vre::Vector{<:AbstractRandomElement}, repetition::Random.Repetition ) =
-    RandomElementSampler( vre )
-
-Base.rand( rng::AbstractRNG, sp::RandomElementSampler ) = rand.( rng, sp.re, assigned=Dict{AbstractRandomElement,Any}() )
 
 abstract type AbstractSequence{T}
 end
@@ -159,37 +154,5 @@ struct SequenceNode{T}
     lags::Vector{UInt}
     cache::Vector{T}
 end
-
-const Dependencies = Dict{Pair{AbstractTimeSeries,UInt}, Symbol}
-
-rand_expr( ts::IID{T}, base_lag::Time, ::Dependencies ) where {T} = SequenceNode( () -> rand(ts.dist), SequenceNode[], UInt[], T[] )
-
-function rand_expr( ts::LaggedTimeSeries{T,Union{IID{T},TimeSeries{T,U}}}, base_lag::Time, dependencies::Dependencies ) where {T,U}
-    key = (ts.base, ts.t.lag - base_lag.lag)
-    if !haskey( dependencies, key )
-        dependencies[key] = Symbol( "x" * string(length(dependencies)) )
-    end
-    return Expr( :ref, [dependencies[ts.base], Expr( :call, [:+, :t, key[2]] )] )
-end
-
-function rand_expr( ts::TimeSeries{T,TransformedRandomElement{Op, T, U}}, base_lag::Time, dependencies::Dependencies ) where {Op,T,U}
-    return Expr( :call, [Op, ts.induction.args...] )
-end
-
-function Base.getindex( node::Node{T}, i::Int ) where {T}
-    j = length(node.cache)
-    while i > j
-        j += 1
-        push!( node.cache, node.calc( getindex.( node.dependencies, j .- node.lags )... ) )
-    end
-    return node.cache[i]
-end
-
-Base.rand(
-    rng::AbstractRNG,
-    ts::IID{T};
-    assigned::Dict{AbstractRandomElement,Any} = Dict{AbstractRandomElement,Any}(),
-) where {T} =
-    memoize( assigned, ts, () -> SequenceNode( () -> rand( ts.dist ), SequenceNode[], UInt[], T[] ) )
 
 end # module
