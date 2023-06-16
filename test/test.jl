@@ -7,28 +7,17 @@ using Debugger
 Random.seed!(1)
 X = IndependentRandomElement( Normal() )
 N = 1_000
-
-Random.Sampler( Random.default_rng(), X, Val(Inf) )
-@enter Random.Sampler( Random.default_rng(), X, Val(Inf) )
-
-@which rand(X,N) # 286
-@which rand(X,Dims((N,))) # 283
-@which rand(Random.default_rng(),X,Dims((N,))) # 282
-Random.gentype(X)
-r = Random.default_rng()
-import Random.gentype
-dims = Dims((N,))
-@which rand!(r, Array{gentype(X)}(undef, dims), X)
-A = Array{gentype(X)}(undef, dims);
-@which Random.Sampler(r,X)
-@which Random.Sampler(typeof(r), X, Val(Inf))
-
 xs = rand( X, N );
 @assert( abs(mean(xs)) < 3/sqrt(N) )
 
 Y = X + 1
-ys = rand( Y, N );
 
+rng = Random.default_rng()
+a = Array{Random.gentype(Y)}( undef, N )
+node = Random.Sampler( rng, Y, Val(Inf) )
+@which rand!( rng, a, node )
+    
+ys = rand( Y, N );
 @assert( abs(mean(ys) - 1) < 3/sqrt(N) )
 
 xys=rand( [X,Y], 10 );

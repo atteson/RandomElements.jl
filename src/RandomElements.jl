@@ -51,11 +51,15 @@ Base.promote_rule( ::Type{U}, ::Type{W} ) where {T <: Number, U <: AbstractRando
 Base.convert( ::Type{AbstractRandomElement{T}}, x::U ) where {T <: Number, U <: Number} =
     IndependentRandomElement(Dirac(convert(T, x)))
 
-struct Node{T}
-    calc::Union{Nothing,Function}
+mutable struct Node{T}
+    calculation::Function
     dependencies::Vector{Node}
     cache::Vector{T}
+    visited::Bool
+    calculated::Bool
 end
+
+Node( calculation::Function, dependencies::Vector{Node}, T ) = Node( calculation, dependencies, T[], false, false )
 
 struct Dependencies
     re2sym::Dict{AbstractRandomElement, Symbol}
@@ -75,11 +79,10 @@ function Base.setindex!( dependencies::Dependencies, sym::Symbol, re::AbstractRa
     dependencies.re2sym[re] = sym
     dependencies.sym2node[sym] = node
 end
-    
 
 function rand_expr( re::IndependentRandomElement{T}, dependencies::Dependencies ) where {T}
     if !haskey( dependencies, re )
-        node = Node( (n) -> rand( re.dist, n ), Node[], T[] )
+        node = Node( (rng, a) -> rand!( rng, re.dist, a ), Node[], T )
         dependencies[re, node] = Symbol("x" * string(length(dependencies)))
     end
     return dependencies[re]
@@ -90,17 +93,54 @@ function rand_expr( re::TransformedRandomElement{Op,T}, dependencies::Dependenci
     return Expr( :call, Op, exprs... )
 end
 
-Node( s::Symbol, dependencies::Dependencies, T ) = dependencies[s]
+node( s::Symbol, dependencies::Dependencies, T ) = dependencies[s]
 
-function Node( expr::Expr, dependencies::Dependencies, T )
-    f = eval( Expr( :->, Expr( :tuple, :n, symbols(dependencies)... ), expr ) )
-    return Node( f, values(dependencies), T[] )
+function node( expr::Expr, dependencies::Dependencies, T )
+    f = eval( Expr( :->, Expr( :tuple, :rng, :a, symbols(dependencies)... ), expr ) )
+    return Node( f, nodes(dependencies), T )
 end
 
 function Random.Sampler( rng::AbstractRNG, re::AbstractRandomElement{T}, ::Random.Repetition ) where {T}
     dependencies = Dependencies()
     expr = rand_expr( re, dependencies )
-    return Node( expr, dependencies, T )
+    return node( expr, dependencies, T )
+end
+
+Random.gentype( ::Node{T} ) where T = T
+
+function Random.rand!( rng::AbstractRNG, node::Node{T} ) where T
+    n = length(node.cache)
+    for dep in node.dependencies
+        if !dep.calculated
+            if dep.visited
+                error( "Circular reference found" )
+            end
+            dep.visited = true
+            if length( dep.cache ) != n
+                dep.cache = Array{Random.gentype(dep)}( undef, n )
+            end
+            rand!( rng, dep )
+        end
+    end
+    node.cache[:] = invokelatest( node.calculation, rng, node.cache, getfield.( node.dependencies, :cache )... )
+    return node.cache
+end
+
+function clear!( node::Node )
+    node.visited = false
+    node.calculated = false
+    for dep in node.dependencies
+        if dep.visited
+            clear!( dep )
+        end
+    end
+end
+
+function Random.rand!( rng::AbstractRNG, a::AbstractArray{T}, node::Node{T} ) where T
+    node.cache = a
+    rand!( rng, node )
+    clear!( node )
+    return a
 end
 
 abstract type AbstractSequence{T}
