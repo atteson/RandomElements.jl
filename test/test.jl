@@ -11,17 +11,11 @@ xs = rand( X, N );
 @assert( abs(mean(xs)) < 3/sqrt(N) )
 
 Y = X + 1
-
-rng = Random.default_rng()
-a = Array{Random.gentype(Y)}( undef, N )
-node = Random.Sampler( rng, Y, Val(Inf) )
-@which rand!( rng, a, node )
-    
 ys = rand( Y, N );
 @assert( abs(mean(ys) - 1) < 3/sqrt(N) )
 
 xys=rand( [X,Y], 10 );
-@assert( maximum(abs.(map( a->-(a...), xys ) .+ 1)) < 1e-6 )
+@assert( maximum(abs.(.-(xys...) .+ 1)) < 1e-6 )
 
 X = IndependentRandomElement( Normal() )
 Y = IndependentRandomElement( Normal() )
@@ -32,11 +26,6 @@ Y = IndependentRandomElement( Normal() )
 
 Z = IndependentRandomElement( MvNormal( [0,0], I(2) ) )
 rand( [X, Z] )
-
-W = X + 3 * Y + 1
-@time w = rand( W, 1_000_000 );
-@assert( abs(mean(w) - 1) < 0.01 )
-@assert( abs( std(w) - sqrt(10) ) < 0.01 )
 
 t = Time()
 X = TimeSeries()

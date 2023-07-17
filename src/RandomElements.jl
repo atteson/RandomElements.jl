@@ -34,10 +34,11 @@ for op in [:+,:*,:/,:-]
 
     e2 = :( Base.$op( x::AbstractRandomElement, y::Number ) = $op( promote( x, y )... ) )
     eval( e2 )
-    
+
+    vop = Meta.parse( "." * string(op) )
     e3 = quote
         Base.$op( x::AbstractRandomElement{T}, y::AbstractRandomElement{T} ) where T =
-            TransformedRandomElement{$op, T, AbstractRandomElement{T}}( AbstractRandomElement{T}[x,y] )
+            TransformedRandomElement{$vop, T, AbstractRandomElement{T}}( AbstractRandomElement{T}[x,y] )
     end
     eval( e3 )
 end
@@ -51,47 +52,41 @@ Base.promote_rule( ::Type{U}, ::Type{W} ) where {T <: Number, U <: AbstractRando
 Base.convert( ::Type{AbstractRandomElement{T}}, x::U ) where {T <: Number, U <: Number} =
     IndependentRandomElement(Dirac(convert(T, x)))
 
-mutable struct Node{T}
-    calculation::Function
-    dependencies::Vector{Node}
-    cache::Vector{T}
-    visited::Bool
+# world age problem prohibits us from compiling larger chunks of code
+# this uses the "numpy" approach of relying on large-scale vectorization instead
+mutable struct Node{F,T,N}
+    calculation::F
+    dependencies::Vector{N}
+    cache::T
+    visiting::Bool
     calculated::Bool
 end
 
-Node( calculation::Function, dependencies::Vector{Node}, T ) = Node( calculation, dependencies, T[], false, false )
+Node( calculation::Function, dependencies::Vector{N}, T ) where {N <: Node} =
+    Node( calculation, dependencies, T[], false, false )
 
-struct Dependencies
-    re2sym::Dict{AbstractRandomElement, Symbol}
-    sym2node::Dict{Symbol, Node}
-end
-
-Dependencies() = Dependencies( Dict{AbstractRandomElement, Symbol}(), Dict{Symbol, Node}() )
-
-Base.length( dependencies::Dependencies ) = length(dependencies.re2sym )
-Base.haskey( dependencies::Dependencies, re::AbstractRandomElement ) = haskey( dependencies.re2sym, re )
-Base.getindex( dependencies::Dependencies, re::AbstractRandomElement ) = dependencies.re2sym[re]
-Base.getindex( dependencies::Dependencies, sym::Symbol ) = dependencies.sym2node[sym]
-symbols( dependencies::Dependencies ) = collect(keys(dependencies.sym2node))
-nodes( dependencies::Dependencies ) = collect(values(dependencies.sym2node))
-
-function Base.setindex!( dependencies::Dependencies, sym::Symbol, re::AbstractRandomElement{T}, node::Node{T} ) where T
-    dependencies.re2sym[re] = sym
-    dependencies.sym2node[sym] = node
-end
-
-function rand_expr( re::IndependentRandomElement{T}, dependencies::Dependencies ) where {T}
-    if !haskey( dependencies, re )
-        node = Node( (rng, a) -> rand!( rng, re.dist, a ), Node[], T )
-        dependencies[re, node] = Symbol("x" * string(length(dependencies)))
+function run!( node::Node{F,T} ) where {F,T}
+    if node.visiting
+        error( "Already visiting $node" )
+    elseif !node.calculated
+        node.visiting = true
+        args = run!.( node.dependencies )
+        node.cache = node.calculation( args... )
+        node.calculated = true
+        node.visiting = false
     end
-    return dependencies[re]
+    return node.cache
 end
 
-function rand_expr( re::TransformedRandomElement{Op,T}, dependencies::Dependencies ) where {Op,T}
-    exprs = rand_expr.( re.args, [dependencies] )
-    return Expr( :call, Op, exprs... )
+function clear!( node::Node{F,T} ) where {F,T}
+    if node.visiting
+        node.visiting = false
+        node.calculated = false
+        clear!.( node.args )
+    end
 end
+
+const Dependencies = Dict{AbstractRandomElement, Node}
 
 node( s::Symbol, dependencies::Dependencies, T ) = dependencies[s]
 
@@ -100,48 +95,33 @@ function node( expr::Expr, dependencies::Dependencies, T )
     return Node( f, nodes(dependencies), T )
 end
 
-function Random.Sampler( rng::AbstractRNG, re::AbstractRandomElement{T}, ::Random.Repetition ) where {T}
+function rand_graph!( rng::AbstractRNG, re::IndependentRandomElement{T}, dependencies::Dependencies, dims::Dims ) where {T}
+    if !haskey( dependencies, re )
+        node = Node( () -> rand( rng, re.dist, dims ), Node[], T )
+        dependencies[re] = node
+    end
+    return dependencies[re]
+end
+
+function rand_graph!( rng::AbstractRNG, re::TransformedRandomElement{Op,T}, dependencies::Dependencies, dims::Dims ) where {Op,T}
+    if !haskey( dependencies, re )
+        deps = rand_graph!.( rng, re.args, [dependencies], [dims] )
+        node = Node( Op, deps, T )
+
+        dependencies[re] =  node
+    end
+    return dependencies[re]
+end
+
+Random.rand( rng::AbstractRNG, re::AbstractRandomElement{T}, dims::Dims ) where {T} = rand( rng, [re], dims )[1]
+
+function Random.rand( rng::AbstractRNG, res::AbstractVector{R}, dims::Dims ) where {R <: AbstractRandomElement}
     dependencies = Dependencies()
-    expr = rand_expr( re, dependencies )
-    return node( expr, dependencies, T )
+    graphs = rand_graph!.( [rng], res, [dependencies], [dims] )
+    return run!.( graphs )
 end
 
-Random.gentype( ::Node{T} ) where T = T
-
-function Random.rand!( rng::AbstractRNG, node::Node{T} ) where T
-    n = length(node.cache)
-    for dep in node.dependencies
-        if !dep.calculated
-            if dep.visited
-                error( "Circular reference found" )
-            end
-            dep.visited = true
-            if length( dep.cache ) != n
-                dep.cache = Array{Random.gentype(dep)}( undef, n )
-            end
-            rand!( rng, dep )
-        end
-    end
-    node.cache[:] = invokelatest( node.calculation, rng, node.cache, getfield.( node.dependencies, :cache )... )
-    return node.cache
-end
-
-function clear!( node::Node )
-    node.visited = false
-    node.calculated = false
-    for dep in node.dependencies
-        if dep.visited
-            clear!( dep )
-        end
-    end
-end
-
-function Random.rand!( rng::AbstractRNG, a::AbstractArray{T}, node::Node{T} ) where T
-    node.cache = a
-    rand!( rng, node )
-    clear!( node )
-    return a
-end
+Random.rand( res::AbstractVector{R} ) where {R <: AbstractRandomElement} = getindex.( rand( Random.default_rng(), res, (1,) ), 1 )
 
 abstract type AbstractSequence{T}
 end
