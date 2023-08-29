@@ -36,9 +36,9 @@ dt = time() - t0
 t = Time()
 X = TimeSeries()
 Z = IID( Normal() )
-X[t] = X[t-1] + Z
-RandomElements.max_lag( X )
 
+X[t] = X[t-1] + Z[t]
+@assert( RandomElements.max_lag( X ) == 1 )
 
 s = rand( Z )
 

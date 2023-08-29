@@ -139,28 +139,29 @@ Base.:+( t::Time, i::Integer ) = Time( t.lag + i )
 
 Base.:-( t::Time, i::Integer ) = Time( t.lag - i )
 
-mutable struct TimeSeries{T, U <: AbstractTimeSeries{T}} <: AbstractRandomElement{AbstractSequence{T}}
+mutable struct TimeSeries{T} <: AbstractRandomElement{AbstractSequence{T}}
     base::AbstractRandomElement{T}
-    induction::Union{U,Nothing}
-    t::Union{Time,Nothing}
+    induction::Union{AbstractRandomElement{T}, Nothing}
+    t::Union{Time, Nothing}
 end
 
-TimeSeries{T,U}( base::AbstractRandomElement{T} ) where {T,U} = TimeSeries{T,U}( base, nothing, nothing )
+TimeSeries{T}( base::AbstractRandomElement{T} ) where {T} =
+    TimeSeries{T}( base, nothing, nothing )
 
 TimeSeries( dist::Distribution = Dirac(0.0) ) =
-    TimeSeries{Float64,AbstractTimeSeries{Float64}}( IndependentRandomElement( dist ) )
+    TimeSeries{Float64}( IndependentRandomElement( dist ) )
 
-function Base.setindex!( ts0::TimeSeries{T,U}, ts1::U, t::Time ) where {T,U}
+function Base.setindex!( ts0::TimeSeries{T}, ts1::AbstractRandomElement{T}, t::Time ) where {T}
     ts0.induction = ts1
     ts0.t = t
 end
 
-struct LaggedTimeSeries{T,U <: AbstractTimeSeries{T}} <: AbstractRandomElement{AbstractSequence{T}}
+struct IndexedTimeSeries{T, U <: AbstractTimeSeries{T}} <: AbstractRandomElement{T}
     base::U
     t::Time
 end
 
-Base.getindex( ts::AbstractTimeSeries{T}, t::Time ) where {T} = LaggedTimeSeries( ts, t )
+Base.getindex( ts::AbstractTimeSeries{T}, t::Time ) where {T} = IndexedTimeSeries( ts, t )
 
 struct IID{T} <: AbstractTimeSeries{T}
     dist::Distribution
@@ -174,7 +175,7 @@ struct SequenceNode{T}
     cache::Array{T}
 end
 
-rand_graph!( rng::AbstractRNG, ts::LaggedTimeSeries{T,IID{T}}, dims::Dims, t::Time ) where {T} =
+rand_graph!( rng::AbstractRNG, ts::IndexedTimeSeries{T,IID{T}}, dims::Dims, t::Time ) where {T} =
     SequenceNode( () -> rand( rng, ts.base.dist, dims ), SequenceNode[], T[] )
 
 function rand_graph!(
@@ -186,22 +187,23 @@ function rand_graph!(
     return SequenceNode( Op, ts.args, UInt[], T[] )
 end
 
-function rand_graph!( rng::AbstractRNG, ts::TimeSeries{T,U}, dims::Dims ) where {T,U}
+function rand_graph!( rng::AbstractRNG, ts::TimeSeries{T}, dims::Dims ) where {T}
     assert( ts.induction != nothing )
     assert( ts.time != nothing )
 
     return rand_graph!( rng, ts.induction, dims::Dims, ts.t )
 end
 
-max_lag( ts::LaggedTimeSeries{T,U}, inside::Bool = true ) where {T,U} =
-    ts.t.lag + max_lag( ts.base, inside )
+max_lag( ts::IndexedTimeSeries{T,U}, t0::Int ) where {T,U} =
+    t0 - ts.t.lag + max_lag( ts.base, t0 )
 
-max_lag( ts::TransformedRandomElement{Op,AbstractSequence{T}}, inside::Bool = true ) where {Op,T} =
-    max( max_lag.( ts.args, inside )... )
+max_lag(
+    ts::TransformedRandomElement{Op,T,U}, t0::Int
+) where {Op, T, U <: AbstractRandomElement{T}} =
+    max( max_lag.( ts.args, t0 )... )
 
-max_lag( ts::IID{T}, inside::Bool = true ) where {T} = 0
+max_lag( _, ::Int ) = 0
 
-max_lag( ts::TimeSeries{T,U}, inside::Bool = true ) where {T,U} =
-    inside ? 0 : max_lag( ts.induction )
+max_lag( ts::TimeSeries{T} ) where {T} = max_lag( ts.induction, ts.t.lag )
 
 end # module
