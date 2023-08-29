@@ -177,9 +177,13 @@ end
 rand_graph!( rng::AbstractRNG, ts::LaggedTimeSeries{T,IID{T}}, dims::Dims, t::Time ) where {T} =
     SequenceNode( () -> rand( rng, ts.base.dist, dims ), SequenceNode[], T[] )
 
-function rand_graph!( rng::AbstractRNG, ts::TransformedRandomElement{Op,AbstractSequence{T}}, dims::Dims, t::Time ) where {T}
-    
-    return SequenceNode( Op, deps, UInt[], T[] )
+function rand_graph!(
+    rng::AbstractRNG,
+    ts::TransformedRandomElement{Op,AbstractSequence{T}},
+    dims::Dims,
+    t::Time,
+) where {T,Op}
+    return SequenceNode( Op, ts.args, UInt[], T[] )
 end
 
 function rand_graph!( rng::AbstractRNG, ts::TimeSeries{T,U}, dims::Dims ) where {T,U}
@@ -188,5 +192,16 @@ function rand_graph!( rng::AbstractRNG, ts::TimeSeries{T,U}, dims::Dims ) where 
 
     return rand_graph!( rng, ts.induction, dims::Dims, ts.t )
 end
+
+max_lag( ts::LaggedTimeSeries{T,U}, inside::Bool = true ) where {T,U} =
+    ts.t.lag + max_lag( ts.base, inside )
+
+max_lag( ts::TransformedRandomElement{Op,AbstractSequence{T}}, inside::Bool = true ) where {Op,T} =
+    max( max_lag.( ts.args, inside )... )
+
+max_lag( ts::IID{T}, inside::Bool = true ) where {T} = 0
+
+max_lag( ts::TimeSeries{T,U}, inside::Bool = true ) where {T,U} =
+    inside ? 0 : max_lag( ts.induction )
 
 end # module

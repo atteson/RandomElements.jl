@@ -37,6 +37,8 @@ t = Time()
 X = TimeSeries()
 Z = IID( Normal() )
 X[t] = X[t-1] + Z
+RandomElements.max_lag( X )
+
 
 s = rand( Z )
 
