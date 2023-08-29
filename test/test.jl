@@ -27,6 +27,12 @@ Y = IndependentRandomElement( Normal() )
 Z = IndependentRandomElement( MvNormal( [0,0], I(2) ) )
 rand( [X, Z] )
 
+t0 = time()
+rand( 2 * X + 1, 1_000_000 );
+dt = time() - t0
+@assert( dt < 1 )
+
+
 t = Time()
 X = TimeSeries()
 Z = IID( Normal() )

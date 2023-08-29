@@ -171,8 +171,22 @@ IID( dist::Distribution{Univariate} ) = IID{Float64}( dist )
 struct SequenceNode{T}
     calc::Union{Nothing,Function}
     dependencies::Vector{SequenceNode}
-    lags::Vector{UInt}
-    cache::Vector{T}
+    cache::Array{T}
+end
+
+rand_graph!( rng::AbstractRNG, ts::LaggedTimeSeries{T,IID{T}}, dims::Dims, t::Time ) where {T} =
+    SequenceNode( () -> rand( rng, ts.base.dist, dims ), SequenceNode[], T[] )
+
+function rand_graph!( rng::AbstractRNG, ts::TransformedRandomElement{Op,AbstractSequence{T}}, dims::Dims, t::Time ) where {T}
+    
+    return SequenceNode( Op, deps, UInt[], T[] )
+end
+
+function rand_graph!( rng::AbstractRNG, ts::TimeSeries{T,U}, dims::Dims ) where {T,U}
+    assert( ts.induction != nothing )
+    assert( ts.time != nothing )
+
+    return rand_graph!( rng, ts.induction, dims::Dims, ts.t )
 end
 
 end # module
