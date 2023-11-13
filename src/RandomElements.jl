@@ -52,9 +52,12 @@ Base.promote_rule( ::Type{U}, ::Type{W} ) where {T <: Number, U <: AbstractRando
 Base.convert( ::Type{AbstractRandomElement{T}}, x::U ) where {T <: Number, U <: Number} =
     IndependentRandomElement(Dirac(convert(T, x)))
 
+abstract type AbstractNode
+end
+
 # world age problem prohibits us from compiling larger chunks of code
 # this uses the "numpy" approach of relying on large-scale vectorization instead
-mutable struct Node{F,T,N}
+mutable struct Node{F, T, N <: AbstractNode} <: AbstractNode
     calculation::F
     dependencies::Vector{N}
     cache::T
@@ -169,10 +172,10 @@ end
 
 IID( dist::Distribution{Univariate} ) = IID{Float64}( dist )
 
-struct SequenceNode{T}
+struct SequenceNode{T, N <: AbstractNode} <: AbstractNode
     calc::Union{Nothing,Function}
-    dependencies::Vector{SequenceNode}
-    cache::Array{T}
+    dependencies::Vector{N}
+    cache::Array{Array{T}}
 end
 
 rand_graph!( rng::AbstractRNG, ts::IndexedTimeSeries{T,IID{T}}, dims::Dims, t::Time ) where {T} =
