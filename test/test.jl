@@ -2,9 +2,10 @@ using RandomElements
 using Random
 using Distributions
 using LinearAlgebra
+using Debugger
 
 Random.seed!(1)
-X = IndependentRandomVariable( Normal() )
+X = IndependentRandomElement( Normal() )
 N = 1_000
 xs = rand( X, N );
 @assert( abs(mean(xs)) < 3/sqrt(N) )
@@ -13,11 +14,11 @@ Y = X + 1
 ys = rand( Y, N );
 @assert( abs(mean(ys) - 1) < 3/sqrt(N) )
 
-xys=rand( [X,Y], 10 )
-@assert( maximum(abs.(map( a->-(a...), xys ) .+ 1)) < 1e-6 )
+xys=rand( [X,Y], 10 );
+@assert( maximum(abs.(.-(xys...) .+ 1)) < 1e-6 )
 
-X = IndependentRandomVariable( Normal() )
-Y = IndependentRandomVariable( Normal() )
+X = IndependentRandomElement( Normal() )
+Y = IndependentRandomElement( Normal() )
 @assert( abs(-(rand( [X,Y] )...)) > 1e-6 )
 
 @assert( abs(-(rand( [X+1, X+1] )...)) < 1e-6 )
@@ -26,23 +27,27 @@ Y = IndependentRandomVariable( Normal() )
 Z = IndependentRandomElement( MvNormal( [0,0], I(2) ) )
 rand( [X, Z] )
 
-W = X + 3 * Y + 1
-@time w = rand( W, 1_000_000 );
-@assert( abs(mean(w) - 1) < 0.01 )
-@assert( abs( std(w) - sqrt(10) ) < 0.01 )
+t0 = time()
+rand( 2 * X + 1, 1_000_000 );
+dt = time() - t0
+@assert( dt < 1 )
 
+
+t = Time()
 X = TimeSeries()
-X[] = lag( X ) + IID( Normal() )
+Z = IID( Normal() )
 
-e = :( x -> x + 1 )
-e.head
-e.args
-e.args[2].args
+X[t] = X[t-1] + Z[t]
+@assert( RandomElements.max_lag( X ) == 1 )
 
-X = IID( Normal() )
-s = rand( X )
+s = rand( Z )
 
 N = 1_000
 S = [s[i] for i in 1:N];
 @assert( abs(sum(S)/sqrt(N)) < 3 )
+
+node = RandomElements.Node( Z )
+n1 = node[1]
+n2 = node[2]
+@assert( n1 == node[1] )
 
