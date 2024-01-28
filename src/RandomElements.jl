@@ -1,23 +1,29 @@
 module RandomElements
 
-export IndependentRandomElement, TimeSeries, IID, lag
-
 using Distributions
 using Random
 
-abstract type AbstractRandomElement{T}
-end
+export IndependentRandomVariable
+
+abstract type AbstractRandomElement{T} end
 
 Base.eltype( ::Type{U} ) where {T, U <: AbstractRandomElement{T}} = T
 
-mutable struct IndependentRandomElement{T,D <: Distribution} <: AbstractRandomElement{T}
-    dist::D
+abstract type AbstractRandomVariable{T <: Number} <: AbstractRandomElement{T} end
+
+mutable struct IndependentRandomVariable{T} <: AbstractRandomVariable{T}
+    dist::Distribution
 end
 
-IndependentRandomElement( dist::D ) where {D <: Distribution} = IndependentRandomElement{eltype(dist),D}( dist )
+IndependentRandomVariable( dist::Distribution ) = IndependentRandomVariable{eltype(dist)}( dist )
 
-struct TransformedRandomElement{O,T,U <: AbstractRandomElement{T}} <: AbstractRandomElement{T}
->>>>>>> 100ec5ed39d4e0d9846d1f0e5b25ce8111ce6d8e
+struct AbstractRandomVector{T,V <: AbstractVector{T}} <: AbstractRandomElement{T}
+    v::V
+end
+
+
+struct TransformedRandomVariable{T,U <: AbstractRandomVariable{T}} <: AbstractRandomVariable{T}
+    op::Function
     # for now, all elements must be of the same type
     args::Vector{U}
 end
@@ -29,12 +35,7 @@ for op in [:+,:*,:/,:-]
     e1 = :( Base.$op( x::NRV, y::Number ) = $op( promote( x, y )... ) )
     eval( e1 )
     
-
-    e2 = quote
-        Base.$op( x::AbstractRandomElement{T}, y::AbstractRandomElement{T} ) where T =
-            TransformedRandomElement{$op, T, AbstractRandomElement{T}}( AbstractRandomElement{T}[x,y] )
-    end
-    
+    e2 = :( Base.$op( x::N, y::NRV ) = $op( promote( x, y )... ) )
     eval( e2 )
     
     e3 = quote
@@ -66,11 +67,10 @@ Base.rand(
 
 Base.rand(
     rng::AbstractRNG,
-
-    tre::TransformedRandomElement{O,T,U};
-    assigned::Dict{AbstractRandomElement,Any} = Dict{AbstractRandomElement,Any}(),
-) where {O,T,U} =
-    memoize( assigned, tre, () -> O( rand.( rng, tre.args, assigned=assigned )... ) )
+    trv::TransformedRandomVariable{T,U};
+    assigned::Dict{AbstractRandomVariable,Any} = Dict{AbstractRandomVariable,Any}(),
+) where {T,U} =
+    memoize( assigned, trv, () -> trv.op( rand.( rng, trv.args, assigned=assigned )... ) )
 
 Base.rand(
     rng::AbstractRNG,
@@ -87,60 +87,10 @@ Random.gentype( ::Type{Vector{U}} ) where {T, U <: AbstractRandomVariable{T}} = 
 Random.Sampler( ::Type{<:AbstractRNG}, vre::Vector{<:AbstractRandomVariable}, repetition::Random.Repetition ) =
     RandomVariableSampler( vre )
 
-Base.rand( rng::AbstractRNG, sp::RandomElementSampler ) = rand.( rng, sp.re, assigned=Dict{AbstractRandomElement,Any}() )
-
-abstract type AbstractSequence{T}
-end
-
-const AbstractTimeSeries{T} = AbstractRandomElement{AbstractSequence{T}}
-
-mutable struct TimeSeries{T, U <: AbstractTimeSeries{T}} <: AbstractRandomElement{AbstractSequence{T}}
-    base::AbstractRandomElement{T}
-    induction::Union{U, Nothing}
-end
-
-TimeSeries( dist::Distribution = Dirac(0.0) ) =
-    TimeSeries{Float64,AbstractTimeSeries{Float64}}( IndependentRandomElement( dist ), nothing )
-
-function Base.setindex!( ts0::TimeSeries{T,U}, ts1::U ) where {T,U}
-    ts0.induction = ts1
-end
-
-struct LaggedTimeSeries{T} <: AbstractRandomElement{AbstractSequence{T}}
-    base::AbstractTimeSeries{T}
-end
-
-lag( ts::AbstractTimeSeries{T} ) where T = LaggedTimeSeries( ts )
-
-struct IID{T} <: AbstractTimeSeries{T}
-    dist::Distribution
-end
-
-IID( dist::Distribution{Univariate} ) = IID{Float64}( dist )
-
-Base.getindex( ts::AbstractTimeSeries{T}, indices::AbstractVector{Int} ) where {T} = IndexedTimeSeries( indices, ts )
-
-struct Node{F,T} <: AbstractSequence{T}
-    calc::F
-    dependencies::Vector{Node}
-    cache::Vector{T}
-end
-
-function Base.getindex( node::Node{F,T}, i::Int ) where {T,F}
-    j = length(node.cache)
-    while i > j
-        j += 1
-        push!( node.cache, node.calc( getindex.( node.dependencies, j )... ) )
-    end
-    return node.cache[i]
-end
-
 Base.rand(
     rng::AbstractRNG,
     sp::RandomVariableSampler,
-    ts::IID{T};
-    assigned::Dict{AbstractRandomElement,Any} = Dict{AbstractRandomElement,Any}(),
-) where {T} =
-    memoize( assigned, ts, () -> Node( () -> rand( ts.dist ), Node[], T[] ) )
+) where {N, T<:AbstractRandomVariable} =
+    rand.( rng, sp.rv, assigned=Dict{AbstractRandomVariable,Any}() )
 
 end # module
